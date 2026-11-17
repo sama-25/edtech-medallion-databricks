@@ -1,0 +1,51 @@
+# Databricks Asset Bundle: deploy with `databricks bundle deploy -t dev`
+bundle:
+  name: edtech-medallion
+
+variables:
+  catalog:
+    default: workspace
+  schema:
+    default: edtech_medallion
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+resources:
+  jobs:
+    edtech_medallion_pipeline:
+      name: edtech-medallion-pipeline
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"   # hourly
+        timezone_id: UTC
+        pause_status: PAUSED                     # unpause when you want it live
+      max_concurrent_runs: 1
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+      tasks:
+        - task_key: setup
+          notebook_task:
+            notebook_path: ./src/00_setup.py
+        - task_key: generate_source_data
+          depends_on: [{task_key: setup}]
+          notebook_task:
+            notebook_path: ./src/01_generate_source_data.py
+        - task_key: bronze_autoloader
+          depends_on: [{task_key: generate_source_data}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./src/02_bronze_autoloader.py
+        - task_key: silver_clean
+          depends_on: [{task_key: bronze_autoloader}]
+          max_retries: 1
+          notebook_task:
+            notebook_path: ./src/03_silver_clean.py
+        - task_key: gold_aggregates
+          depends_on: [{task_key: silver_clean}]
+          notebook_task:
+            notebook_path: ./src/04_gold_aggregates.py
